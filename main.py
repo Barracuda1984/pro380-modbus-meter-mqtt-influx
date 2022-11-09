@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-import time
+import time 
 import struct
 import json
-import paho.mqtt.client
-from influxdb import InfluxDBClient
-from serial import Serial, PARITY_EVEN
+#import paho.mqtt.client
 
-from umodbus.client.serial import rtu
+import influxdb_client, os, time
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+#from serial import Serial, PARITY_EVEN
+
+#from umodbus.client.serial import rtu
+import socket
+
+from umodbus import conf
+from umodbus.client import tcp
+
 
 def get_data(start = 0x4000, length = 0x02):
-    message = rtu.read_holding_registers(slave_id = 1, starting_address = start, quantity = length)
-    response = rtu.send_message(message, serial_port)
+    message = tcp.read_holding_registers(slave_id = 1, starting_address = start, quantity = length)
+    response = tcp.send_message(message, sock)
 
     count = 0
     data = {}
@@ -27,43 +36,56 @@ def get_data(start = 0x4000, length = 0x02):
     return data
 
 def get_tariff():
-    message = rtu.read_holding_registers(slave_id = 1, starting_address = 0x6048, quantity = 1)
-    response = rtu.send_message(message, serial_port)
+    message = tcp.read_holding_registers(slave_id = 1, starting_address = 0x6048, quantity = 1)
+    response = tcp.send_message(message, sock)
     tariff = [-1, 1, 0]
     print(response)
     return {"tariff_val" : tariff[response[0]]}
 
 # MODBUS serial RTU
-serial_port = Serial(port='/dev/ttyUSB485', baudrate=9600, parity=PARITY_EVEN, stopbits=1, bytesize=8, timeout=1)
+#serial_port = Serial(port='/dev/ttyUSB485', baudrate=9600, parity=PARITY_EVEN, stopbits=1, bytesize=8, timeout=1)
 
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(('192.168.3.75', 502))
 print("Serial port connected")
 
 # MQTT
-mqtt_host_local = "192.168.1.112"
-mqttc = paho.mqtt.client.Client()
-mqttc.connect(mqtt_host_local, 1883, 60)
-mqttc.loop_start()
+#mqtt_host_local = "192.168.1.112"
+#mqttc = paho.mqtt.client.Client()
+#mqttc.connect(mqtt_host_local, 1883, 60)
+#mqttc.loop_start()
 
-print("MQTT Connected")
+#print("MQTT Connected")
 
 # InfluxDB
-influx = InfluxDBClient(host='192.168.1.112', port=8086)
+token = "UXocfbEOCSAEuKUUIHOhFmLfzHG7y29Y5Mj2FTe9VpAQ87ngsr5SHSllBqpiEVsix3c_NIQd10Zhz5wwdV59Gg=="
+org = "electricity"
+url = "http://192.168.1.200:8086"
+influx = influxdb_client.InfluxDBClient(url=url, token=token, org=org)
+#influx = InfluxDBClient(host='192.168.1.200', port=8086, token=token, org=org)
+
 print("InfluxDBclinet")
-print(influx.get_list_database())
-influx.switch_database('electricity')
+#print(influx.get_list_database())
+#influx.switch_database('electricity')
+
+
+
 
 print("Influx connected")
 
 once = True
 counter = 0
+bucket="heatingelconsuption"
+
+
 while once:
     power_values = get_data(start = 0x5000, length = 0x32)
     energy_values = get_data(start = 0x6000, length = 0x3c)
     tariff = get_tariff()
 
-    mqttc.publish("electricity/power", json.dumps(power_values))
-    mqttc.publish("electricity/energy", json.dumps(energy_values))
-    mqttc.publish("electricity/tariff", json.dumps(tariff))
+#    mqttc.publish("electricity/power", json.dumps(power_values))
+#    mqttc.publish("electricity/energy", json.dumps(energy_values))
+#    mqttc.publish("electricity/tariff", json.dumps(tariff))
 
     if counter % 30 == 0:
         metrics = {}
@@ -84,12 +106,14 @@ while once:
                             '6004': energy_values['6004'],
 
                             '6018': energy_values['6018'],
-                            '603c': energy_values['603c'],
 
                             'tariff_val': tariff['tariff_val']
                             }
 
-        influx.write_points([metrics])
+       
+        write_api = influx.write_api(write_options=SYNCHRONOUS)
+        write_api.write(bucket=bucket, org="electricity", record=[metrics])
+        #influx.write_points([metrics])
         print("influx")
 
     #once = False
@@ -97,4 +121,5 @@ while once:
     counter += 1
     time.sleep(1)
 
-serial_port.close()
+#serial_port.close()
+sock.close()
