@@ -96,7 +96,11 @@ while once:
         #metrics["fields"] = {**power_values, **energy_values, **tariff}
 
         # Append only specific values
-        metrics["fields"] = {'5012': power_values['5012'],
+        metrics["fields"] = {'5000': energy_values['5000'],
+                             '5002': energy_values['5002'],
+                             '5004': energy_values['5004'],
+                             '5006': energy_values['5006'],
+                            '5012': power_values['5012'],
                             '5014': power_values['5014'],
                             '5016': power_values['5016'],
                             '5018': power_values['5018'],
